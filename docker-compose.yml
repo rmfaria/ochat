@@ -1,0 +1,22 @@
+services:
+
+  ochat:
+    build: .
+    ports:
+      - "${OCHAT_PORT:-18800}:18800"
+    environment:
+      # ── Required: at least one provider key ──────────────────────────────
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY:    ${OPENAI_API_KEY:-}
+      # ── Optional ─────────────────────────────────────────────────────────
+      PORT:      18800
+      BASE_PATH: ${BASE_PATH:-}
+      NODE_ENV:  production
+    volumes:
+      # Persist openclaw state (sessions, memory, agent config) across restarts
+      - ochat_state:/root/.openclaw
+    restart: unless-stopped
+
+volumes:
+  ochat_state:
+    name: ochat_state
