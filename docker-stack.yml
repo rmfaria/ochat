@@ -26,7 +26,7 @@ services:
         - traefik.enable=true
 
         # ── router ──────────────────────────────────────────────────────────
-        - traefik.http.routers.ochat.rule=Host(`prod.nesecurity.com.br`) && (Path(`/ochat`) || PathPrefix(`/ochat/`))
+        - traefik.http.routers.ochat.rule=Host(`${ORBIT_HOST}`) && (Path(`/ochat`) || PathPrefix(`/ochat/`))
         - traefik.http.routers.ochat.entrypoints=websecure
         - traefik.http.routers.ochat.tls=true
         - traefik.http.routers.ochat.tls.certresolver=letsencryptresolver
