@@ -1,31 +1,57 @@
 # ochat
 
-Web chat interface for [OpenClaw](https://github.com/openclaw/openclaw) — a lightweight Express server that spawns an `openclaw` process per session and streams responses back to the browser over Server-Sent Events (SSE).
+Web chat interface for [OpenClaw](https://github.com/openclaw/openclaw) — a lightweight Express server that manages OpenClaw agent sessions and returns responses to the browser.
 
 ## Overview
 
-ochat provides a minimal, self-hosted chat UI to interact with an OpenClaw agent from any browser. It is designed to run as a Docker Swarm service behind Traefik with basic-auth protection.
+ochat provides a minimal, self-hosted chat UI to interact with an OpenClaw agent from any browser.
 
 - Single-file TypeScript server (`src/index.ts`, ~180 lines)
 - Per-session OpenClaw subprocess — full isolation between conversations
 - Dark space-themed UI, no external dependencies
 - Configurable base path for reverse-proxy setups (e.g. `/ochat/`)
 
-## Requirements
+---
 
-- Node.js 22+
-- `openclaw` installed globally (`npm install -g openclaw`)
-- (Optional) Docker + Swarm + Traefik for production deployment
+## Docker (recommended)
 
-## Quick start
+The easiest way to run ochat. No Node.js or openclaw required on the host.
 
 ```bash
+git clone https://github.com/rmfaria/ochat.git
+cd ochat
+cp .env.example .env
+# Edit .env — set ANTHROPIC_API_KEY or OPENAI_API_KEY
+docker compose up -d
+```
+
+Open: **http://localhost:18800**
+
+On first startup, ochat bootstraps the OpenClaw gateway config automatically from your API key.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | — | Anthropic API key (at least one provider required) |
+| `OPENAI_API_KEY` | — | OpenAI API key |
+| `OCHAT_PORT` | `18800` | Host port |
+| `BASE_PATH` | `` | URL prefix for reverse-proxy (e.g. `/ochat`) |
+
+See [INSTALL.md](INSTALL.md) for the full guide including production deployment, Swarm/Traefik setup, and troubleshooting.
+
+---
+
+## Native (Node.js)
+
+Requires Node.js 22+ and `openclaw` installed globally.
+
+```bash
+npm install -g openclaw
 npm install
 npm run build          # compiles src/index.ts → dist/index.js
 npm start              # serves on port 18800
 ```
-
-Open: http://localhost:18800
 
 ### Development (no build step)
 
@@ -33,59 +59,59 @@ Open: http://localhost:18800
 npm run dev
 ```
 
-## Configuration
-
-All settings via environment variables:
+### Native environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `18800` | HTTP port |
-| `BASE_PATH` | `` | URL prefix (e.g. `/ochat`) for reverse-proxy setups |
-| `OPENCLAW_BIN` | `openclaw` | Command used to invoke OpenClaw (override for custom install paths) |
-
-Example with a non-standard openclaw path:
+| `BASE_PATH` | `` | URL prefix for reverse-proxy setups |
+| `OPENCLAW_BIN` | `openclaw` | OpenClaw invocation command (override for custom paths) |
 
 ```bash
 OPENCLAW_BIN="node /usr/lib/node_modules/openclaw/openclaw.mjs" npm start
 ```
 
-## Production deployment (Docker Swarm + Traefik)
+---
 
-A ready-to-use Swarm stack is provided in `docker-stack.yml`.
+## Production: Docker Swarm + Traefik
 
 ```bash
-# Set basic-auth credentials (htpasswd format)
-export OCHAT_BASICAUTH='admin:$$apr1$$...'
-
+export ORBIT_HOST=your.domain.com
+export OCHAT_BASICAUTH='admin:$$apr1$$...'   # htpasswd -nb admin yourpassword
 docker stack deploy -c docker-stack.yml ochat
 ```
 
-The stack:
-- Serves at `https://<host>/ochat/` via Traefik
-- Enforces basic-auth (realm: `OpenClaw Chat`)
-- Mounts `/opt/ochat` (built app) and `/root/.openclaw` (agent state) from the host
-- Mounts the global openclaw package from the host node_modules
+Serves at `https://<ORBIT_HOST>/ochat/` with HTTP Basic Auth via Traefik.
+
+---
 
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Chat UI (HTML) |
-| `POST` | `/chat` | Start a new OpenClaw session, returns SSE stream |
+| `GET` | `/health` | Health check |
+| `POST` | `/api/chat` | Send a message, get agent response |
 
-### POST /chat
+### POST /api/chat
 
 **Request:**
 ```json
-{ "message": "your prompt here" }
+{ "message": "your prompt here", "sessionId": "optional-uuid" }
 ```
 
-**Response:** `text/event-stream`
+**Response:**
+```json
+{ "ok": true, "text": "agent response", "sessionId": "uuid" }
+```
 
-Each SSE event contains a chunk of the OpenClaw response. The stream closes when the process exits.
+Sessions are identified by `sessionId`. Reuse the same ID to continue a conversation.
+
+---
 
 ## Related
 
+- [INSTALL.md](INSTALL.md) — full installation guide
 - [orbit-core](https://github.com/rmfaria/orbit-core) — telemetry platform ochat was originally bundled with
 - [OpenClaw](https://github.com/openclaw/openclaw) — the AI agent runtime
 
