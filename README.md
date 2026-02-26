@@ -1,67 +1,94 @@
-# ochat — OpenClaw Web Chat
+# ochat
 
-Interface web de chat para o OpenClaw AI agent, com autenticação via Traefik basicauth.
+Web chat interface for [OpenClaw](https://github.com/openclaw/openclaw) — a lightweight Express server that spawns an `openclaw` process per session and streams responses back to the browser over Server-Sent Events (SSE).
 
-## URL
+## Overview
 
-`https://prod.nesecurity.com.br/ochat/`
-Usuário: `admin` | Senha: ver `/opt/ochat/.env` no servidor
+ochat provides a minimal, self-hosted chat UI to interact with an OpenClaw agent from any browser. It is designed to run as a Docker Swarm service behind Traefik with basic-auth protection.
 
-## Arquitetura
+- Single-file TypeScript server (`src/index.ts`, ~180 lines)
+- Per-session OpenClaw subprocess — full isolation between conversations
+- Dark space-themed UI, no external dependencies
+- Configurable base path for reverse-proxy setups (e.g. `/ochat/`)
 
-- **Backend**: Express + TypeScript (Node 22), porta 18800
-- **Transporte**: `openclaw agent --session-id <uuid> --message <text> --json` via `child_process`
-- **Deploy**: Docker Swarm service no stack `ochat`, rede `Portn8n`
-- **Auth**: Traefik basicauth middleware (`ochat-auth`)
-- **Rota**: `Host(prod.nesecurity.com.br) && PathPrefix(/ochat)`
-- **Strip prefix**: middleware `ochat-strip` remove `/ochat` antes de chegar no Express
+## Requirements
 
-## Deploy inicial
+- Node.js 22+
+- `openclaw` installed globally (`npm install -g openclaw`)
+- (Optional) Docker + Swarm + Traefik for production deployment
 
-```bash
-# 1. Criar diretórios no servidor
-ssh root@prod.nesecurity.com.br 'mkdir -p /opt/ochat/src /opt/ochat/dist'
-
-# 2. Copiar arquivos
-scp -r deploy/ochat/* root@prod.nesecurity.com.br:/opt/ochat/
-
-# 3. Instalar dependências e compilar
-ssh root@prod.nesecurity.com.br 'cd /opt/ochat && npm install && npx esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --external:express'
-
-# 4. Gerar senha e guardar no .env
-ssh root@prod.nesecurity.com.br '
-  PASS="sua_senha_aqui"
-  HASH=$(openssl passwd -apr1 "$PASS")
-  python3 -c "
-with open(\"/opt/ochat/.env\", \"w\") as f:
-    f.write(f\"OCHAT_PASS={\"$PASS\"}\nOCHAT_HASH=$HASH\n\")
-"'
-
-# 5. Deployar
-ssh root@prod.nesecurity.com.br '/opt/ochat/deploy.sh'
-```
-
-## Redeploy após mudanças
+## Quick start
 
 ```bash
-scp deploy/ochat/src/index.ts root@prod.nesecurity.com.br:/opt/ochat/src/
-ssh root@prod.nesecurity.com.br '/opt/ochat/deploy.sh'
+npm install
+npm run build          # compiles src/index.ts → dist/index.js
+npm start              # serves on port 18800
 ```
 
-## Variáveis de ambiente do container
+Open: http://localhost:18800
 
-| Variável | Valor | Descrição |
-|---|---|---|
-| `PORT` | `18800` | Porta do Express |
-| `BASE_PATH` | `/ochat` | Prefixo da rota (usado no frontend) |
-| `OPENCLAW_BIN` | `node /usr/lib/node_modules/openclaw/openclaw.mjs` | Comando openclaw no container |
-| `HOME` | `/root` | Home do openclaw (lê config de `/root/.openclaw`) |
+### Development (no build step)
 
-## Volumes montados
+```bash
+npm run dev
+```
 
-| Host | Container | Modo |
-|---|---|---|
-| `/opt/ochat` | `/app` | ro |
-| `/opt/ochat/node_modules` | `/app/node_modules` | ro |
-| `/usr/lib/node_modules/openclaw` | `/usr/lib/node_modules/openclaw` | ro |
-| `/root/.openclaw` | `/root/.openclaw` | rw |
+## Configuration
+
+All settings via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `18800` | HTTP port |
+| `BASE_PATH` | `` | URL prefix (e.g. `/ochat`) for reverse-proxy setups |
+| `OPENCLAW_BIN` | `openclaw` | Command used to invoke OpenClaw (override for custom install paths) |
+
+Example with a non-standard openclaw path:
+
+```bash
+OPENCLAW_BIN="node /usr/lib/node_modules/openclaw/openclaw.mjs" npm start
+```
+
+## Production deployment (Docker Swarm + Traefik)
+
+A ready-to-use Swarm stack is provided in `docker-stack.yml`.
+
+```bash
+# Set basic-auth credentials (htpasswd format)
+export OCHAT_BASICAUTH='admin:$$apr1$$...'
+
+docker stack deploy -c docker-stack.yml ochat
+```
+
+The stack:
+- Serves at `https://<host>/ochat/` via Traefik
+- Enforces basic-auth (realm: `OpenClaw Chat`)
+- Mounts `/opt/ochat` (built app) and `/root/.openclaw` (agent state) from the host
+- Mounts the global openclaw package from the host node_modules
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Chat UI (HTML) |
+| `POST` | `/chat` | Start a new OpenClaw session, returns SSE stream |
+
+### POST /chat
+
+**Request:**
+```json
+{ "message": "your prompt here" }
+```
+
+**Response:** `text/event-stream`
+
+Each SSE event contains a chunk of the OpenClaw response. The stream closes when the process exits.
+
+## Related
+
+- [orbit-core](https://github.com/rmfaria/orbit-core) — telemetry platform ochat was originally bundled with
+- [OpenClaw](https://github.com/openclaw/openclaw) — the AI agent runtime
+
+## License
+
+Apache-2.0
